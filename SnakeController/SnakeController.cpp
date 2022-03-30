@@ -2,9 +2,10 @@
 
 #include <algorithm>
 #include <sstream>
-
+#include <memory>
 #include "EventT.hpp"
 #include "IPort.hpp"
+#include <stdexcept>
 
 namespace Snake
 {
@@ -63,7 +64,7 @@ Controller::Controller(IPort& p_displayPort, IPort& p_foodPort, IPort& p_scorePo
     }
 }
 
-void Controller::handleTimePassed(const TimeoutInd&)
+void Controller::handleTimePassed(std::unique_ptr<Event> e)
 {
     Segment newHead = getNewHead();
 
@@ -97,16 +98,16 @@ void Controller::handleTimePassed(const TimeoutInd&)
     cleanNotExistingSnakeSegments();
 }
 
-void Controller::handleDirectionChange(const DirectionInd& directionInd)
+void Controller::handleDirectionChange(std::unique_ptr<Event> e)
 {
-    auto direction = directionInd.direction;
+    auto direction = e->direction;
 
     if ((m_currentDirection & 0b01) != (direction & 0b01)) {
         m_currentDirection = direction;
     }
 }
 
-void Controller::handleFoodPositionChange(const FoodInd& receivedFood)
+void Controller::handleFoodPositionChange(std::unique_ptr<Event> e)
 {
     bool requestedFoodCollidedWithSnake = false;
     for (auto const& segment : m_segments) {
@@ -127,7 +128,7 @@ void Controller::handleFoodPositionChange(const FoodInd& receivedFood)
     m_foodPosition = std::make_pair(receivedFood.x, receivedFood.y);
 }
 
-void Controller::handleNewFood(const FoodResp& requestedFood)
+void Controller::handleNewFood(std::unique_ptr<Event> e)
 {
     bool requestedFoodCollidedWithSnake = false;
     for (auto const& segment : m_segments) {
@@ -215,18 +216,31 @@ Controller::Segment Controller::getNewHead() const
 
 void Controller::receive(std::unique_ptr<Event> e)
 {
+    
     try {
-        handleTimePassed(*dynamic_cast<EventT<TimeoutInd> const&>(*e));
-    } catch (std::bad_cast&) {
+        handleTimePassed(std::move(e));
+        if(e->getMessageId() == TimeoutInd::MESSAGE_ID){
+            throw std::runtime_error("end");
+        }
+    } catch (std::runtime_error&) {
         try {
-            handleDirectionChange(*dynamic_cast<EventT<DirectionInd> const&>(*e));
-        } catch (std::bad_cast&) {
+            handleDirectionChange(std::move(e));
+            if(e->getMessageId() == DirectionInd::MESSAGE_ID){
+                throw std::runtime_error("end direction");
+            }   
+        } catch (std::runtime_error&) {
             try {
-                handleFoodPositionChange(*dynamic_cast<EventT<FoodInd> const&>(*e));
-            } catch (std::bad_cast&) {
+                handleFoodPositionChange(std::move(e));
+                if(e->getMessageId() == FoodInd::MESSAGE_ID){
+                    throw std::runtime_error("end direction");
+                }
+            } catch (std::runtime_error&) {
                 try {
-                    handleNewFood(*dynamic_cast<EventT<FoodResp> const&>(*e));
-                } catch (std::bad_cast&) {
+                    handleNewFood(std::move(e));
+                    if(e->getMessageId() == FoodResp::MESSAGE_ID){
+                    throw std::runtime_error("end direction");
+                    }
+                } catch (std::runtime_error&) {
                     throw UnexpectedEventException();
                 }
             }
